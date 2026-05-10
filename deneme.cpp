@@ -9,83 +9,80 @@
 using namespace std;
 using namespace std::chrono;
 
-// --- 1. İSTİSNA YÖNETİMİ (EXCEPTION HANDLING) ---
+//  EXCEPTION HANDLING 
 class MatrixException : public runtime_error {
 public:
     MatrixException(const string& msg) : runtime_error(msg) {}
 };
 
-// --- 2. YARDIMCI FONKSİYONLAR VE DOSYA OKUMA ---
-// Çarpım için fonksiyon çağrısı (Benchmark 2 için)
+//  YARDIMCI FONKSİYONLAR 
 inline int multiplyElements(int a, int b) {
     return a * b;
 }
 
-vector<vector<int>> readMatrix(ifstream& file, int expectedRows, int expectedCols) {
+// Dosyadan matris okuma ve hata denetimi.
+vector<vector<int>> readMatrix(ifstream& file, int expectedRows, int expectedCols, const string& matName) {
     vector<vector<int>> matrix(expectedRows, vector<int>(expectedCols));
     string line;
     
     for (int i = 0; i < expectedRows; ++i) {
-        if (!getline(file, line)) throw MatrixException("Satır eksik: Beklenen boyuttan daha az satır var.");
+        // Satır eksikliği kontrolü 
+        if (!getline(file, line) || line.empty()) {
+            if (line.empty() && i < expectedRows) { i--; continue; } // Boş satırları atla
+            throw MatrixException(matName + ": Beklenen boyuttan daha az satir var.");
+        }
         
         stringstream ss(line);
-        string temp;
+        string val;
         int j = 0;
-        
-        while (ss >> temp) {
-            if (j >= expectedCols) throw MatrixException("Satırda fazladan eleman: Beklenenden fazla veri girilmiş.");
+        while (ss >> val) {
+            // Fazladan eleman kontrolü 
+            if (j >= expectedCols) throw MatrixException(matName + " satir " + to_string(i+1) + ": Fazladan eleman saptandi.");
             
-            // Sayısal olmayan karakter kontrolü
-            for (char c : temp) {
-                if (!isdigit(c) && c != '-') throw MatrixException("Sayısal olmayan değer saptandı: " + temp);
+            // Sayısal olmayan değer kontrolü 
+            for (char c : val) {
+                if (!isdigit(c) && c != '-') throw MatrixException(matName + ": Sayisal olmayan deger saptandi: " + val);
             }
-            matrix[i][j] = stoi(temp);
+            matrix[i][j] = stoi(val);
             j++;
         }
-        if (j < expectedCols) throw MatrixException("Satırda eksik eleman: Beklenenden daha az veri girilmiş.");
+        // Satırda eksik eleman kontrolü 
+        if (j < expectedCols) throw MatrixException(matName + " satir " + to_string(i+1) + ": Eksik eleman saptandi.");
     }
     return matrix;
 }
 
+// Dosya okuma ve m != p doğrulaması.
 void parseAndValidateFile(const string& filename) {
     ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Dosya acilamadi: " << filename << endl;
-        return;
-    }
+    if (!file.is_open()) { cerr << "Hata: Dosya acilamadi: " << filename << endl; return; }
 
     try {
-        string line;
         int n, m, p, q;
-
-        // Matris A Boyutları
         if (!(file >> n >> m)) return;
-        vector<vector<int>> A = readMatrix(file, n, m);
+        string dummy; getline(file, dummy); // Satır sonunu temizle
+        
+        vector<vector<int>> A = readMatrix(file, n, m, "Matris A");
 
-        // Boş satırı atla
-        getline(file, line); 
-        while (getline(file, line) && line.empty()) {} 
+        // Matrisler arasındaki boşlukları atla 
+        while (file.peek() == '\n' || file.peek() == '\r' || file.peek() == ' ') file.ignore();
+        
+        if (!(file >> p >> q)) throw MatrixException("Matris B boyutlari okunamadi.");
+        getline(file, dummy);
+        
+        // Boyut uyumluluğu kontrolü (m != p) 
+        if (m != p) throw MatrixException("Uyumsuz matris boyutlari: " + to_string(m) + " != " + to_string(p));
 
-        // Matris B Boyutları okuma (önceki satırdan veya yeni satırdan)
-        stringstream ss(line);
-        if (!(ss >> p >> q)) {
-            if (!(file >> p >> q)) throw MatrixException("Matris B boyutlari okunamadi.");
-        }
-
-        // Boyut Uyumluluğu Kontrolü (m != p)
-        if (m != p) throw MatrixException("Uyumsuz matris boyutlari: Matris A'nin sutun sayisi (m), Matris B'nin satir sayisina (p) esit degil.");
-
-        vector<vector<int>> B = readMatrix(file, p, q);
-        cout << filename << " basariyla okundu ve dogrulandi. (" << n << "x" << m << ") x (" << p << "x" << q << ")" << endl;
-
+        vector<vector<int>> B = readMatrix(file, p, q, "Matris B");
+        cout << "Basarili: " << filename << " icindeki matrisler carpilabilir (" << n << "x" << m << " * " << p << "x" << q << ")." << endl;
     } catch (const MatrixException& e) {
         cerr << "Hata (" << filename << "): " << e.what() << endl;
     }
 }
 
-// --- 3. BENCHMARK FONKSİYONLARI ---
+// BENCHMARK FONKSİYONLARI 
 
-// Benchmark 1.1: Vector kullanarak doğrudan çarpma
+// C++ Vector - Doğrudan Çarpma 
 void multiplyVectorDirect(const vector<vector<int>>& A, const vector<vector<int>>& B, vector<vector<int>>& C, int n, int m, int q) {
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < q; ++j) {
@@ -97,7 +94,7 @@ void multiplyVectorDirect(const vector<vector<int>>& A, const vector<vector<int>
     }
 }
 
-// Benchmark 1.2: Dinamik Dizi (new/delete) ile çarpma
+// C++ Dinamik Dizi - Doğrudan Çarpma 
 void multiplyDynamicArray(int** A, int** B, int** C, int n, int m, int q) {
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < q; ++j) {
@@ -109,94 +106,51 @@ void multiplyDynamicArray(int** A, int** B, int** C, int n, int m, int q) {
     }
 }
 
-// Benchmark 2: Vector kullanarak fonksiyon çağrısıyla çarpma
-void multiplyVectorFunc(const vector<vector<int>>& A, const vector<vector<int>>& B, vector<vector<int>>& C, int n, int m, int q) {
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < q; ++j) {
-            C[i][j] = 0;
-            for (int k = 0; k < m; ++k) {
-                C[i][j] += multiplyElements(A[i][k], B[k][j]);
-            }
-        }
-    }
-}
-
-// --- 4. TEST MOTORU (DRIVER) ---
+// TEST MOTORU
 void runBenchmarks() {
-    // Test edilecek matris boyutları
-    vector<pair<int, int>> sizes = {{50, 80}, {120, 150}, {300, 400}, {900, 700}};
-    int num_runs = 5;
+    vector<pair<int, int>> sizes = {{50, 80}, {120, 150}, {300, 400}, {900, 700}}; // Ödevdeki boyutlar 
+    int num_runs = 5; // 5 kez çalıştırıp ortalama alma kuralı 
 
     cout << left << setw(15) << "Language" << setw(25) << "Implementation" << setw(15) << "Size" << "Avg. Time (ms)" << endl;
-    cout << string(70, '-') << endl;
+    cout << string(75, '-') << endl;
 
     for (auto size : sizes) {
-        int n = size.first;
-        int m = size.second;
-        int p = m; // Çarpılabilmesi için
-        int q = n + 10; // Rastgele q boyutu
+        int n = size.first, m = size.second, p = m, q = n + 10;
 
-        // Test Verisi Oluşturma
-        vector<vector<int>> vecA(n, vector<int>(m, 2));
-        vector<vector<int>> vecB(p, vector<int>(q, 3));
-        vector<vector<int>> vecC(n, vector<int>(q, 0));
+        // Vector
+        vector<vector<int>> vA(n, vector<int>(m, 2)), vB(p, vector<int>(q, 3)), vC(n, vector<int>(q, 0));
 
-        // 1. Vector Direct Benchmark
-        long long totalDuration = 0;
-        for (int r = 0; r < num_runs; ++r) {
-            auto start = high_resolution_clock::now();
-            multiplyVectorDirect(vecA, vecB, vecC, n, m, q);
-            auto stop = high_resolution_clock::now();
-            totalDuration += duration_cast<milliseconds>(stop - start).count();
-        }
+        // 1. Vector Direct 
+        auto start = high_resolution_clock::now();
+        for(int r=0; r<num_runs; r++) multiplyVectorDirect(vA, vB, vC, n, m, q);
+        auto stop = high_resolution_clock::now();
         cout << left << setw(15) << "C++" << setw(25) << "Vector (Direct)" 
-             << to_string(n) + "x" + to_string(m) << "\t\t" << (totalDuration / num_runs) << endl;
+             << to_string(n)+"x"+to_string(m) << "\t\t" << duration_cast<milliseconds>(stop - start).count()/num_runs << endl;
 
-        // 2. Vector Function Call Benchmark
-        totalDuration = 0;
-        for (int r = 0; r < num_runs; ++r) {
-            auto start = high_resolution_clock::now();
-            multiplyVectorFunc(vecA, vecB, vecC, n, m, q);
-            auto stop = high_resolution_clock::now();
-            totalDuration += duration_cast<milliseconds>(stop - start).count();
-        }
-        cout << left << setw(15) << "C++" << setw(25) << "Vector (Func Call)" 
-             << to_string(n) + "x" + to_string(m) << "\t\t" << (totalDuration / num_runs) << endl;
+        // 2. Dynamic Array 
+        int** dA = new int*[n]; for(int i=0; i<n; i++) { dA[i] = new int[m]; fill_n(dA[i], m, 2); }
+        int** dB = new int*[p]; for(int i=0; i<p; i++) { dB[i] = new int[q]; fill_n(dB[i], q, 3); }
+        int** dC = new int*[n]; for(int i=0; i<n; i++) dC[i] = new int[q];
 
-        // 3. Dynamic Array Benchmark
-        int** dynA = new int*[n];
-        for(int i=0; i<n; ++i) { dynA[i] = new int[m]; fill_n(dynA[i], m, 2); }
-        
-        int** dynB = new int*[p];
-        for(int i=0; i<p; ++i) { dynB[i] = new int[q]; fill_n(dynB[i], q, 3); }
-        
-        int** dynC = new int*[n];
-        for(int i=0; i<n; ++i) { dynC[i] = new int[q]; }
-
-        totalDuration = 0;
-        for (int r = 0; r < num_runs; ++r) {
-            auto start = high_resolution_clock::now();
-            multiplyDynamicArray(dynA, dynB, dynC, n, m, q);
-            auto stop = high_resolution_clock::now();
-            totalDuration += duration_cast<milliseconds>(stop - start).count();
-        }
+        start = high_resolution_clock::now();
+        for(int r=0; r<num_runs; r++) multiplyDynamicArray(dA, dB, dC, n, m, q);
+        stop = high_resolution_clock::now();
         cout << left << setw(15) << "C++" << setw(25) << "Dynamic Array" 
-             << to_string(n) + "x" + to_string(m) << "\t\t" << (totalDuration / num_runs) << endl;
+             << to_string(n)+"x"+to_string(m) << "\t\t" << duration_cast<milliseconds>(stop - start).count()/num_runs << endl;
 
-        // Bellek Temizliği (Memory Cleanup)
-        for(int i=0; i<n; ++i) { delete[] dynA[i]; delete[] dynC[i]; }
-        for(int i=0; i<p; ++i) delete[] dynB[i];
-        delete[] dynA; delete[] dynB; delete[] dynC;
+        // Bellek temizliği 
+        for(int i=0; i<n; i++) { delete[] dA[i]; delete[] dC[i]; }
+        for(int i=0; i<p; i++) delete[] dB[i];
+        delete[] dA; delete[] dB; delete[] dC;
     }
 }
 
-int main() {
-    // 1. Dosya Okuma ve İstisna Yönetimi Testi (Kendi .txt dosyalarını buraya verebilirsin)
-    // parseAndValidateFile("test_matrix.txt");
-
-    // 2. Performans Testleri (Benchmarking)
-    cout << "Benchmarking basliyor...\n" << endl;
-    runBenchmarks();
-
+int main(int argc, char* argv[]) {
+    if (argc > 1) {
+        parseAndValidateFile(argv[1]);
+    } else {
+        cout << "Performans Olcumleri (Benchmarking) Baslatiliyor...\n" << endl;
+        runBenchmarks();
+    }
     return 0;
 }
