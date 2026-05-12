@@ -1,115 +1,153 @@
 import time
 import sys
 
-# ÖZEL HATA SINIFI
+# --- 1. İSTİSNA YÖNETİMİ (EXCEPTION HANDLING) ---
 class MatrixException(Exception):
-    """Matris işlemleri için özel hata tanımlaması."""
+    """Matris okuma ve doğrulama işlemleri için özel hata sınıfı."""
     pass
 
-# YARDIMCI ÇARPIM FONKSİYONU
-def multiply_elements(a, b):
-    return a * b
-
-# DOSYA OKUMA VE HATA DENETİMİ
-def read_matrix(file, expected_rows, expected_cols, mat_name):
+# --- 2. DOSYA OKUMA VE DOĞRULAMA ---
+def read_matrix(lines, start_idx, expected_rows, expected_cols):
     matrix = []
-    rows_read = 0
+    current_idx = start_idx
     
-    while rows_read < expected_rows:
-        line = file.readline()
-        if not line:
-            raise MatrixException(f"{mat_name}: Beklenen boyuttan daha az satir var.")
+    for i in range(expected_rows):
+        if current_idx >= len(lines):
+            raise MatrixException("Satır eksik: Beklenen boyuttan daha az satır var.")
         
-        line = line.strip()
-        if not line: # Boş satırları atla
-            continue
-            
+        line = lines[current_idx].strip()
+        current_idx += 1
+        
+        if not line:
+            raise MatrixException("Satır eksik: Beklenen boyuttan daha az satır var.")
+        
         elements = line.split()
         
-        # Fazladan eleman kontrolü
+        # Hata Kontrolleri
         if len(elements) > expected_cols:
-            raise MatrixException(f"{mat_name} satir {rows_read + 1}: Fazladan eleman saptandi.")
-        # Eksik eleman kontrolü
+            raise MatrixException("Satırda fazladan eleman: Beklenenden fazla veri girilmiş.")
         if len(elements) < expected_cols:
-            raise MatrixException(f"{mat_name} satir {rows_read + 1}: Eksik eleman saptandi.")
+            raise MatrixException("Satırda eksik eleman: Beklenenden daha az veri girilmiş.")
             
         row = []
         for item in elements:
-            # Sayısal olmayan değer kontrolü
+            # Sayısal olmayan karakter kontrolü (negatif sayılar için '-' işaretini de tolere eder)
             if not (item.isdigit() or (item.startswith('-') and item[1:].isdigit())):
-                raise MatrixException(f"{mat_name}: Sayisal olmayan deger saptandi: {item}")
+                raise MatrixException(f"Sayısal olmayan değer saptandı: {item}")
             row.append(int(item))
         
         matrix.append(row)
-        rows_read += 1
         
-    return matrix
+    return matrix, current_idx
 
-def parse_and_validate(filename):
+def parse_and_validate_file(filename):
     try:
         with open(filename, 'r') as file:
-            # Matris A Boyutları
-            line = file.readline()
-            while line and not line.strip(): line = file.readline()
-            if not line: return
+            lines = file.readlines()
             
-            n, m = map(int, line.split())
-            read_matrix(file, n, m, "Matris A")
+        if not lines:
+            return
+
+        # Matris A boyutlarını oku
+        first_line = lines[0].split()
+        if len(first_line) != 2:
+            raise MatrixException("Matris A boyutları okunamadı.")
+        n, m = int(first_line[0]), int(first_line[1])
+        
+        # Matris A elemanlarını oku
+        matrix_a, current_idx = read_matrix(lines, 1, n, m)
+        
+        # İki matris arasındaki boş satırları atla
+        while current_idx < len(lines) and not lines[current_idx].strip():
+            current_idx += 1
             
-            # Matris B Boyutları (A'dan sonraki ilk dolu satır)
-            line = file.readline()
-            while line and not line.strip(): line = file.readline()
+        if current_idx >= len(lines):
+            raise MatrixException("Matris B boyutları bulunamadı.")
             
-            if not line:
-                raise MatrixException("Matris B boyutlari okunamadi.")
-                
-            p, q = map(int, line.split())
+        # Matris B boyutlarını oku
+        b_dim_line = lines[current_idx].split()
+        if len(b_dim_line) != 2:
+            raise MatrixException("Matris B boyutları okunamadı.")
+        p, q = int(b_dim_line[0]), int(b_dim_line[1])
+        current_idx += 1
+        
+        # Boyut uyumluluğu kontrolü (m != p)
+        if m != p:
+            raise MatrixException(f"Uyumsuz matris boyutları: Matris A'nın sütun sayısı ({m}), Matris B'nin satır sayısına ({p}) eşit değil.")
             
-            # Boyut uyumluluğu kontrolü (m != p)
-            if m != p:
-                raise MatrixException(f"Uyumsuz matris boyutları: {m} != {p}")
-                
-            read_matrix(file, p, q, "Matris B")
-            print(f"Basarili: {filename} icindeki matrisler carpilabilir.")
+        # Matris B elemanlarını oku
+        matrix_b, current_idx = read_matrix(lines, current_idx, p, q)
+        
+        print(f"{filename} başarıyla okundu ve doğrulandı. ({n}x{m}) x ({p}x{q})")
 
     except FileNotFoundError:
-        print(f"Hata: {filename} dosyası bulunamadı.")
+        print(f"Dosya bulunamadı: {filename}. Lütfen dosya yolunu kontrol edin.")
     except MatrixException as e:
         print(f"Hata ({filename}): {e}")
     except Exception as e:
-        print(f"Beklenmeyen Hata: {e}")
+        print(f"Beklenmeyen hata: {e}")
 
-# BENCHMARK FONKSİYONLARI
+# --- 3. BENCHMARK FONKSİYONLARI ---
+def multiply_elements(a, b):
+    # Fonksiyon çağrısı (Function Call) etkisini ölçmek için yardımcı fonksiyon
+    return a * b
+
 def multiply_direct(A, B, C, n, m, q):
+    # Döngü içinde doğrudan hesaplama (Direct Computation)
     for i in range(n):
         for j in range(q):
             C[i][j] = 0
             for k in range(m):
                 C[i][j] += A[i][k] * B[k][j]
 
+def multiply_func(A, B, C, n, m, q):
+    # Ayrı bir fonksiyon çağırarak hesaplama
+    for i in range(n):
+        for j in range(q):
+            C[i][j] = 0
+            for k in range(m):
+                C[i][j] += multiply_elements(A[i][k], B[k][j])
+
+# --- 4. TEST MOTORU (DRIVER) ---
 def run_benchmarks():
+    # Test edilecek matris boyutları
     sizes = [(50, 80), (120, 150), (300, 400), (900, 700)]
     runs = 5
+
     print(f"\n{'Language':<15} {'Implementation':<25} {'Size':<15} {'Avg. Time (ms)'}")
     print("-" * 70)
 
     for n, m in sizes:
-        p, q = m, n + 10
+        p = m
+        q = n + 10
+
+        # Python'da "List of lists" veri yapısıyla test verisi oluşturma
         A = [[2 for _ in range(m)] for _ in range(n)]
         B = [[3 for _ in range(q)] for _ in range(p)]
         C = [[0 for _ in range(q)] for _ in range(n)]
 
-        start_time = time.perf_counter()
+        # Benchmark 2.1: Doğrudan Hesaplama
+        total_time = 0
         for _ in range(runs):
+            start_time = time.perf_counter()
             multiply_direct(A, B, C, n, m, q)
-        avg_time_ms = ((time.perf_counter() - start_time) / runs) * 1000
-        print(f"{'Python':<15} {'List of lists':<25} {f'{n}x{m}':<15} {int(avg_time_ms)}")
+            total_time += (time.perf_counter() - start_time)
+        avg_time_ms = (total_time / runs) * 1000
+        print(f"{'Python':<15} {'Direct computation':<25} {f'{n}x{m}':<15} {int(avg_time_ms)}")
+
+        # Benchmark 2.2: Fonksiyon Çağrısı
+        total_time = 0
+        for _ in range(runs):
+            start_time = time.perf_counter()
+            multiply_func(A, B, C, n, m, q)
+            total_time += (time.perf_counter() - start_time)
+        avg_time_ms = (total_time / runs) * 1000
+        print(f"{'Python':<15} {'Function Call':<25} {f'{n}x{m}':<15} {int(avg_time_ms)}")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        # Terminalden dosya ismi verilirse hata testi yap
-        parse_and_validate(sys.argv[1])
+        dosya_adi = sys.argv[1]
+        parse_and_validate_file(dosya_adi)
     else:
-        # Argüman yoksa performans testlerini çalıştır
-        print("Python Benchmarking basliyor...")
+        print("Benchmarking başlıyor...\n")
         run_benchmarks()
